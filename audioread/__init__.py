@@ -27,8 +27,9 @@ class NoBackendError(DecodeError):
 def _gst_available():
     """Determines whether pygstreamer is installed."""
     try:
-        import gst
-    except ImportError:
+        import gi
+        gi.require_version('Gst', '1.0')
+    except ImportError, ValueError:
         return False
     else:
         return True

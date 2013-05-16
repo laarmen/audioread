@@ -47,14 +47,14 @@ file:
 """
 from __future__ import with_statement
 
-import gst
+import gi
 import sys
-import gobject
 import threading
 import os
 import urllib
 import Queue
 from . import DecodeError
+from gi.repository import GObject, Gst
 
 QUEUE_SIZE = 10
 BUFFER_SIZE = 10
@@ -105,7 +105,7 @@ class IncompleteGStreamerError(GStreamerError):
 
 _shared_loop_thread = None
 _loop_thread_lock = threading.RLock()
-gobject.threads_init()
+GObject.threads_init()
 def get_loop_thread():
     """Get the shared main-loop thread.
     """
@@ -121,7 +121,7 @@ class MainLoopThread(threading.Thread):
     """
     def __init__(self):   
         super(MainLoopThread, self).__init__()             
-        self.loop = gobject.MainLoop()
+        self.loop = GObject.MainLoop()
         self.daemon = True
         
     def run(self):    
@@ -155,12 +155,12 @@ class GstAudioFile(object):
         self.finished = False
         
         # Set up the Gstreamer pipeline.
-        self.pipeline = gst.Pipeline()
-        try:
-            self.dec = gst.element_factory_make("uridecodebin")
-            self.conv = gst.element_factory_make("audioconvert")
-            self.sink = gst.element_factory_make("appsink")
-        except gst.ElementNotFoundError:
+        self.pipeline = Gst.Pipeline()
+
+        self.dec = Gst.ElementFactory.make("uridecodebin", None)
+        self.conv = Gst.ElementFactory.make("audioconvert", None)
+        self.sink = Gst.ElementFactory.make("appsink", None)
+        if not selt.dec or not self.conv or not self.sink:
             # uridecodebin, audioconvert, or appsink is missing. We need
             # gst-plugins-base.
             raise IncompleteGStreamerError()
@@ -183,7 +183,7 @@ class GstAudioFile(object):
         # Configure the output.
         # We want short integer data.
         self.sink.set_property('caps',
-            gst.Caps('audio/x-raw-int, width=16, depth=16, signed=true')
+            Gst.Caps('audio/x-raw-int, width=16, depth=16, signed=true')
         )
         # TODO set endianness?
         # Set up the characteristics of the output. We don't want to
@@ -223,7 +223,7 @@ class GstAudioFile(object):
         # Return as soon as the stream is ready!
         self.running = True
         self.got_caps = False
-        self.pipeline.set_state(gst.STATE_PLAYING)
+        self.pipeline.set_state(Gst.State.PLAYING)
         self.ready_sem.acquire()
         if self.read_exc:
             # An error occurred before the stream became ready.
@@ -245,11 +245,11 @@ class GstAudioFile(object):
         self.samplerate = info['rate']
         
         # Query duration.
-        q = gst.query_new_duration(gst.FORMAT_TIME)
+        q = Gst.Query.new_duration(Gst.Format.TIME)
         if pad.get_peer().query(q):
             # Success.
             format, length = q.parse_duration()
-            if format == gst.FORMAT_TIME:
+            if format == Gst.Format.TIME:
                 self.duration = float(length) / 1000000000
             else:
                 self.read_exc = MetadataMissingError(
@@ -299,7 +299,7 @@ class GstAudioFile(object):
     
     def _message(self, bus, message):
         if not self.finished:
-            if message.type == gst.MESSAGE_EOS:
+            if message.type == Gst.MessageType.EOS:
                 # The file is done. Tell the consumer thread.
                 self.queue.put(SENTINEL)
                 if not self.got_caps:
@@ -308,7 +308,7 @@ class GstAudioFile(object):
                     self.read_exc = NoStreamError()
                     self.ready_sem.release()
 
-            elif message.type == gst.MESSAGE_ERROR:
+            elif message.type == Gst.MessageType.ERROR:
                 gerror, debug = message.parse_error()
                 if 'not-linked' in debug:
                     self.read_exc = NoStreamError()
@@ -349,7 +349,7 @@ class GstAudioFile(object):
                 pass
 
             # Halt the pipeline (closing file).
-            self.pipeline.set_state(gst.STATE_NULL)
+            self.pipeline.set_state(Gst.State.NULL)
 
     def __del__(self):
         self.close()
